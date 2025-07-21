@@ -5,9 +5,11 @@ const Employee = require('../models/Employee');
 // Get all employees
 router.get('/', async (req, res) => {
   try {
-    const employees = await Employee.find();
+    const employeeModel = new Employee(req.app.locals.db);
+    const employees = await employeeModel.findAll();
     res.json(employees);
   } catch (err) {
+    console.error('Error fetching employees:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -16,45 +18,53 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     console.log('Creating employee with data:', req.body);
-    const { userId, employeeId, password, name, role, email } = req.body;
+    const { userId, employeeId, employee_id, password, name, email, phone, department, designation } = req.body;
     
-    // Support both userId and employeeId
-    const id = userId || employeeId;
+    // Support multiple field names for employee ID
+    const id = userId || employeeId || employee_id;
     
     if (!id || !password) {
       return res.status(400).json({ error: 'Employee ID and password required' });
     }
     
     const employeeData = {
-      userId: id,
+      employee_id: id,
       password,
       name: name || 'Unknown',
-      role: role || 'employee',
-      email: email || `${id}@library.com`
+      email: email || `${id}@library.com`,
+      phone: phone || '',
+      department: department || 'General',
+      designation: designation || 'Employee'
     };
     
     console.log('Employee data to save:', employeeData);
     
-    const employee = new Employee(employeeData);
-    await employee.save();
+    const employeeModel = new Employee(req.app.locals.db);
+    const savedEmployee = await employeeModel.create(employeeData);
     
-    console.log('Employee created successfully:', employee);
-    res.status(201).json(employee);
+    console.log('Employee created successfully:', savedEmployee);
+    res.status(201).json(savedEmployee);
   } catch (err) {
     console.error('Error creating employee:', err);
-    res.status(500).json({ error: 'Server error', details: err.message });
+    if (err.code === 'ER_DUP_ENTRY') {
+      res.status(400).json({ error: 'Employee ID already exists' });
+    } else {
+      res.status(500).json({ error: 'Server error', details: err.message });
+    }
   }
 });
 
 // Delete employee
 router.delete('/:id', async (req, res) => {
   try {
-    const result = await Employee.findByIdAndDelete(req.params.id);
-    if (!result) {
+    const employeeModel = new Employee(req.app.locals.db);
+    const deleted = await employeeModel.delete(req.params.id);
+    if (!deleted) {
       return res.status(404).json({ error: 'Employee not found' });
     }
     res.json({ message: 'Employee deleted' });
   } catch (err) {
+    console.error('Error deleting employee:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -66,12 +76,20 @@ router.post('/login', async (req, res) => {
     return res.status(400).json({ error: 'userId and password required' });
   }
   try {
-    const employee = await Employee.findOne({ userId, password });
+    const employeeModel = new Employee(req.app.locals.db);
+    const employee = await employeeModel.validateLogin(userId, password);
     if (!employee) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
-    res.json({ message: 'Login successful', employeeId: employee._id, userId: employee.userId });
+    res.json({ 
+      message: 'Login successful', 
+      employeeId: employee.id, 
+      userId: employee.employee_id,
+      name: employee.name,
+      email: employee.email
+    });
   } catch (err) {
+    console.error('Error during login:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });

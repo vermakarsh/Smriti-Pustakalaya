@@ -1,12 +1,15 @@
-const mongoose = require('mongoose');
+const mysql = require('mysql2/promise');
 const fs = require('fs');
 const path = require('path');
-const Book = require('./src/models/Book');
-const User = require('./src/models/User');
-const Employee = require('./src/models/Employee');
 
 // Database configuration
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/smriti-pustakalaya';
+const DB_CONFIG = {
+  host: process.env.DB_HOST || 'localhost',
+  user: process.env.DB_USER || 'root',
+  password: process.env.DB_PASSWORD || '',
+  database: process.env.DB_NAME || 'smriti_pustakalaya'
+};
+
 const BACKUP_DIR = path.join(__dirname, 'backups');
 
 // Ensure backup directory exists
@@ -16,13 +19,11 @@ if (!fs.existsSync(BACKUP_DIR)) {
 
 // Function to create backup
 async function createBackup() {
+  let connection;
   try {
-    console.log('🔄 Connecting to MongoDB...');
-    await mongoose.connect(MONGODB_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    });
-    console.log('✅ Connected to MongoDB successfully');
+    console.log('🔄 Connecting to MySQL...');
+    connection = await mysql.createConnection(DB_CONFIG);
+    console.log('✅ Connected to MySQL successfully');
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const backupData = {
@@ -34,20 +35,20 @@ async function createBackup() {
 
     // Backup books
     console.log('📚 Backing up books...');
-    const books = await Book.find({});
-    backupData.books = books.map(book => book.toObject());
+    const [books] = await connection.execute('SELECT * FROM books');
+    backupData.books = books;
     console.log(`✅ ${books.length} books backed up`);
 
     // Backup employees
     console.log('👥 Backing up employees...');
-    const employees = await Employee.find({});
-    backupData.employees = employees.map(emp => emp.toObject());
+    const [employees] = await connection.execute('SELECT * FROM employees');
+    backupData.employees = employees;
     console.log(`✅ ${employees.length} employees backed up`);
 
     // Backup users
     console.log('👤 Backing up users...');
-    const users = await User.find({});
-    backupData.users = users.map(user => user.toObject());
+    const [users] = await connection.execute('SELECT * FROM users');
+    backupData.users = users;
     console.log(`✅ ${users.length} users backed up`);
 
     // Save backup to file
@@ -63,20 +64,20 @@ async function createBackup() {
     console.error('❌ Backup failed:', error);
     throw error;
   } finally {
-    await mongoose.disconnect();
-    console.log('🔌 Disconnected from MongoDB');
+    if (connection) {
+      await connection.end();
+      console.log('🔌 Disconnected from MySQL');
+    }
   }
 }
 
 // Function to restore from backup
 async function restoreFromBackup(backupFile) {
+  let connection;
   try {
-    console.log('🔄 Connecting to MongoDB...');
-    await mongoose.connect(MONGODB_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    });
-    console.log('✅ Connected to MongoDB successfully');
+    console.log('🔄 Connecting to MySQL...');
+    connection = await mysql.createConnection(DB_CONFIG);
+    console.log('✅ Connected to MySQL successfully');
 
     // Read backup file
     if (!fs.existsSync(backupFile)) {
@@ -88,29 +89,47 @@ async function restoreFromBackup(backupFile) {
 
     // Clear existing data
     console.log('🧹 Clearing existing data...');
-    await Book.deleteMany({});
-    await Employee.deleteMany({});
-    await User.deleteMany({});
+    await connection.execute('DELETE FROM books');
+    await connection.execute('DELETE FROM employees');
+    await connection.execute('DELETE FROM users');
     console.log('✅ Existing data cleared');
 
     // Restore books
     if (backupData.books && backupData.books.length > 0) {
       console.log('📚 Restoring books...');
-      await Book.insertMany(backupData.books);
+      for (const book of backupData.books) {
+        await connection.execute(
+          `INSERT INTO books (title, author, isbn, genre, condition_status, donor_name, donor_mobile, donor_address, donation_date, image_url, status, created_at, updated_at) 
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [book.title, book.author, book.isbn, book.genre, book.condition_status, book.donor_name, book.donor_mobile, book.donor_address, book.donation_date, book.image_url, book.status, book.created_at, book.updated_at]
+        );
+      }
       console.log(`✅ ${backupData.books.length} books restored`);
     }
 
     // Restore employees
     if (backupData.employees && backupData.employees.length > 0) {
       console.log('👥 Restoring employees...');
-      await Employee.insertMany(backupData.employees);
+      for (const employee of backupData.employees) {
+        await connection.execute(
+          `INSERT INTO employees (employee_id, name, email, phone, department, designation, password, is_active, created_at, updated_at) 
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [employee.employee_id, employee.name, employee.email, employee.phone, employee.department, employee.designation, employee.password, employee.is_active, employee.created_at, employee.updated_at]
+        );
+      }
       console.log(`✅ ${backupData.employees.length} employees restored`);
     }
 
     // Restore users
     if (backupData.users && backupData.users.length > 0) {
       console.log('👤 Restoring users...');
-      await User.insertMany(backupData.users);
+      for (const user of backupData.users) {
+        await connection.execute(
+          `INSERT INTO users (name, email, phone, address, user_type, membership_id, is_active, created_at, updated_at) 
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [user.name, user.email, user.phone, user.address, user.user_type, user.membership_id, user.is_active, user.created_at, user.updated_at]
+        );
+      }
       console.log(`✅ ${backupData.users.length} users restored`);
     }
 
@@ -120,8 +139,10 @@ async function restoreFromBackup(backupFile) {
     console.error('❌ Restore failed:', error);
     throw error;
   } finally {
-    await mongoose.disconnect();
-    console.log('🔌 Disconnected from MongoDB');
+    if (connection) {
+      await connection.end();
+      console.log('🔌 Disconnected from MySQL');
+    }
   }
 }
 

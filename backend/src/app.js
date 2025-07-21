@@ -1,9 +1,23 @@
 require('dotenv').config();
 const express = require('express');
-const mongoose = require('mongoose');
+const mysql = require('mysql2/promise');
 const morgan = require('morgan');
 const winston = require('winston');
 const app = express();
+
+// MySQL connection pool
+const pool = mysql.createPool({
+  host: process.env.DB_HOST || 'localhost',
+  user: process.env.DB_USER || 'root',
+  password: process.env.DB_PASSWORD || '',
+  database: process.env.DB_NAME || 'smriti_pustakalaya',
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0
+});
+
+// Make pool available globally
+app.locals.db = pool;
 
 // CORS middleware
 const cors = require('cors');
@@ -25,13 +39,72 @@ const logger = winston.createLogger({
   ],
 });
 
-// Connect to MongoDB
-mongoose.connect(process.env.MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-})
-.then(() => logger.info('MongoDB connected'))
-.catch(err => logger.error('MongoDB connection error:', err));
+// Connect to MySQL and initialize database
+async function initializeDatabase() {
+  try {
+    const connection = await pool.getConnection();
+    logger.info('MySQL connected successfully');
+    
+    // Create tables if they don't exist
+    await connection.execute(`
+      CREATE TABLE IF NOT EXISTS employees (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        employee_id VARCHAR(50) UNIQUE NOT NULL,
+        name VARCHAR(100) NOT NULL,
+        email VARCHAR(100) UNIQUE,
+        phone VARCHAR(15),
+        department VARCHAR(50),
+        designation VARCHAR(50),
+        password VARCHAR(255) NOT NULL,
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )
+    `);
+    
+    await connection.execute(`
+      CREATE TABLE IF NOT EXISTS books (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        title VARCHAR(255) NOT NULL,
+        author VARCHAR(255) NOT NULL,
+        isbn VARCHAR(20) UNIQUE,
+        genre VARCHAR(50),
+        condition_status ENUM('New', 'Good', 'Fair', 'Poor') DEFAULT 'Good',
+        donor_name VARCHAR(100),
+        donor_mobile VARCHAR(15),
+        donor_address TEXT,
+        donation_date DATE,
+        image_url VARCHAR(500),
+        status ENUM('Available', 'Issued', 'Reserved', 'Damaged') DEFAULT 'Available',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )
+    `);
+    
+    await connection.execute(`
+      CREATE TABLE IF NOT EXISTS users (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        email VARCHAR(100) UNIQUE,
+        phone VARCHAR(15),
+        address TEXT,
+        user_type ENUM('Student', 'Faculty', 'Public') DEFAULT 'Public',
+        membership_id VARCHAR(50) UNIQUE,
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )
+    `);
+    
+    connection.release();
+    logger.info('Database tables initialized successfully');
+  } catch (error) {
+    logger.error('MySQL connection error:', error);
+    process.exit(1);
+  }
+}
+
+initializeDatabase();
 
 // Middleware
 app.use(express.json());
