@@ -8,8 +8,10 @@ const app = express();
 // CORS middleware
 const cors = require('cors');
 app.use(cors({
-  origin: 'http://localhost:3000',
-  credentials: true
+  origin: ['http://localhost:3000', 'http://192.168.69.195:3000', 'http://192.168.69.195:19006', 'http://localhost:19006', 'exp://192.168.69.195:19000'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 
 // Winston logger setup
@@ -40,12 +42,14 @@ app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'ok', message: 'Backend running!' });
 });
 
+
+
 // Import and use routes here
 app.use('/api/auth', require('./routes/auth'));
-// app.use('/api/users', require('./routes/users'));
 app.use('/api/books', require('./routes/books'));
 app.use('/api/employees', require('./routes/employees'));
-// ...
+app.use('/api/users', require('./routes/users'));
+app.use('/api/dashboard', require('./routes/dashboard'));
 
 // Error handler
 app.use((err, req, res, next) => {

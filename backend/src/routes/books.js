@@ -17,6 +17,8 @@ router.get('/debugtest', (req, res) => {
   res.json({ message: 'Debug route works!' });
 });
 
+
+
 // Debug: fetch book by MongoDB _id
 router.get('/debug/:id', async (req, res) => {
   try {
@@ -79,12 +81,112 @@ router.get('/:isbn/donators', async (req, res) => {
 // POST /api/books - add a new book
 router.post('/', async (req, res) => {
   try {
-    const { title, author, isbn, year, genre, description, donators, destinationOfBook } = req.body;
-    const book = new Book({ title, author, isbn, year, genre, description, donators, destinationOfBook });
-    await book.save();
-    res.status(201).json(book);
+    console.log('=== CREATING NEW BOOK ===');
+    console.log('Request body:', req.body);
+    
+    const { title, author, isbn, year, genre, description, donators, destinationOfBook, status, donationDate } = req.body;
+    
+    // Validate required fields
+    if (!title || !author) {
+      console.log('Missing required fields: title or author');
+      return res.status(400).json({ error: 'Title and author are required' });
+    }
+    
+    const bookData = { 
+      title, 
+      author, 
+      isbn, 
+      year, 
+      genre, 
+      description, 
+      donators, 
+      destinationOfBook,
+      status: status || 'pending',
+      donationDate: donationDate ? new Date(donationDate) : new Date()
+    };
+    
+    console.log('Book data to save:', bookData);
+    
+    const book = new Book(bookData);
+    const savedBook = await book.save();
+    
+    console.log('Book saved successfully:', savedBook);
+    console.log('=== BOOK CREATION COMPLETE ===');
+    
+    res.status(201).json(savedBook);
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    console.error('Error in POST /api/books:', err);
+    console.error('Error details:', err.message);
+    if (err.code === 11000) {
+      res.status(400).json({ error: 'ISBN already exists' });
+    } else {
+      res.status(500).json({ error: 'Server error', details: err.message });
+    }
+  }
+});
+
+// POST /api/books/:id/verify - verify a book donation
+router.post('/:id/verify', async (req, res) => {
+  try {
+    const { destinationOfBook } = req.body;
+    console.log('=== VERIFICATION REQUEST ===');
+    console.log('Book ID:', req.params.id);
+    console.log('Destination:', destinationOfBook);
+    console.log('Request body:', req.body);
+    
+    // First check if book exists
+    const existingBook = await Book.findById(req.params.id);
+    if (!existingBook) {
+      console.log('Book not found for verification id:', req.params.id);
+      return res.status(404).json({ error: 'Book not found' });
+    }
+    
+    console.log('Existing book before update:', existingBook);
+    
+    const book = await Book.findByIdAndUpdate(
+      req.params.id,
+      { 
+        status: 'verified',
+        destinationOfBook: destinationOfBook || 'Default Location'
+      },
+      { new: true }
+    );
+    
+    console.log('Book after verification update:', book);
+    console.log('=== VERIFICATION COMPLETE ===');
+    
+    res.json({ message: 'Book verified successfully', book });
+  } catch (err) {
+    console.error('Error in POST /api/books/:id/verify:', err);
+    res.status(500).json({ error: 'Server error', details: err.message });
+  }
+});
+
+// DELETE /api/books/:id - delete a book
+router.delete('/:id', async (req, res) => {
+  try {
+    console.log('=== DELETE BOOK REQUEST ===');
+    console.log('Book ID:', req.params.id);
+    
+    // First check if book exists
+    const existingBook = await Book.findById(req.params.id);
+    if (!existingBook) {
+      console.log('Book not found for deletion id:', req.params.id);
+      return res.status(404).json({ error: 'Book not found' });
+    }
+    
+    console.log('Book to delete:', existingBook);
+    
+    // Delete the book
+    await Book.findByIdAndDelete(req.params.id);
+    
+    console.log('Book deleted successfully');
+    console.log('=== DELETE COMPLETE ===');
+    
+    res.json({ message: 'Book deleted successfully' });
+  } catch (err) {
+    console.error('Error in DELETE /api/books/:id:', err);
+    res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
 

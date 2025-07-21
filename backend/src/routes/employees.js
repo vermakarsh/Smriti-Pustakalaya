@@ -15,15 +15,34 @@ router.get('/', async (req, res) => {
 // Add new employee
 router.post('/', async (req, res) => {
   try {
-    const { userId, password } = req.body;
-    if (!userId || !password) {
-      return res.status(400).json({ error: 'userId and password required' });
+    console.log('Creating employee with data:', req.body);
+    const { userId, employeeId, password, name, role, email } = req.body;
+    
+    // Support both userId and employeeId
+    const id = userId || employeeId;
+    
+    if (!id || !password) {
+      return res.status(400).json({ error: 'Employee ID and password required' });
     }
-    const employee = new Employee({ userId, password });
+    
+    const employeeData = {
+      userId: id,
+      password,
+      name: name || 'Unknown',
+      role: role || 'employee',
+      email: email || `${id}@library.com`
+    };
+    
+    console.log('Employee data to save:', employeeData);
+    
+    const employee = new Employee(employeeData);
     await employee.save();
+    
+    console.log('Employee created successfully:', employee);
     res.status(201).json(employee);
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    console.error('Error creating employee:', err);
+    res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
 
